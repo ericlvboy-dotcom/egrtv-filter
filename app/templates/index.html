@@ -1704,11 +1704,13 @@
                 const statusIcon = source.enabled ? '✅' : '⏸️';
                 const prefixBadge = source.prefix ? `<span class="group-badge">Prefix: ${source.prefix}</span>` : '';
                 const routeBadge = source.route ? `<span class="group-badge" style="background: #1a5e3d;">Route: /${source.route}/</span>` : '';
+                const typeBadge = source.type === 'm3u' ? '<span class="group-badge" style="background:#51408a;">M3U</span>' : '<span class="group-badge">Xtream</span>';
                 html += `
                     <div class="source-item" style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px; margin-bottom: 10px; border: 1px solid rgba(255,255,255,0.1);">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                             <div>
                                 <strong style="color: #00d4ff;">${statusIcon} ${source.name || 'Unnamed'}</strong>
+                                ${typeBadge}
                                 ${prefixBadge}
                                 ${routeBadge}
                             </div>
@@ -1719,7 +1721,7 @@
                             </div>
                         </div>
                         <div style="color: #888; font-size: 0.85em;">
-                            ${source.host || 'No host configured'}
+                            ${source.type === 'm3u' ? (source.playlist_url || 'No playlist URL configured') : (source.host || 'No host configured')}
                         </div>
                     </div>
                 `;
@@ -1869,6 +1871,7 @@
             if (!source) return;
             
             // Create a simple edit modal/form
+            const isM3u = source.type === 'm3u';
             const html = `
                 <div class="modal active" id="source-edit-modal" onclick="if(event.target===this)closeSourceEdit()">
                     <div class="modal-content" style="max-width: 500px;">
@@ -1882,14 +1885,26 @@
                                 <input type="text" id="edit-source-name" value="${source.name || ''}">
                             </div>
                             <div class="form-group">
+                                <label>Source Type</label>
+                                <select id="edit-source-type" onchange="toggleSourceTypeFields()">
+                                    <option value="xtream" ${!isM3u ? 'selected' : ''}>Xtream Codes</option>
+                                    <option value="m3u" ${isM3u ? 'selected' : ''}>M3U Playlist URL</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="m3u-source-fields" style="display:${isM3u ? 'block' : 'none'};">
+                                <label>M3U Playlist URL</label>
+                                <input type="url" id="edit-source-playlist-url" value="${source.playlist_url || ''}" placeholder="https://example.com/playlist.m3u">
+                                <div class="hint">The playlist is downloaded during each cache refresh. Direct stream URLs are passed through to the player.</div>
+                            </div>
+                            <div class="form-group" id="xtream-source-host" style="display:${isM3u ? 'none' : 'block'};">
                                 <label>Server URL</label>
                                 <input type="text" id="edit-source-host" value="${source.host || ''}" placeholder="http://example.com:8080">
                             </div>
-                            <div class="form-group">
+                            <div class="form-group" id="xtream-source-username" style="display:${isM3u ? 'none' : 'block'};">
                                 <label>Username</label>
                                 <input type="text" id="edit-source-username" value="${source.username || ''}">
                             </div>
-                            <div class="form-group">
+                            <div class="form-group" id="xtream-source-password" style="display:${isM3u ? 'none' : 'block'};">
                                 <label>Password</label>
                                 <input type="password" id="edit-source-password" value="${source.password || ''}">
                             </div>
@@ -1917,7 +1932,8 @@
                             <div id="source-test-status" style="display: none; margin-top: 15px;"></div>
                             <div style="display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap;">
                                 <button class="btn btn-primary" onclick="saveSourceEdit('${sourceId}')">Save</button>
-                                <button class="btn btn-secondary" onclick="testSource()">🧪 Test</button>
+                                <button class="btn btn-secondary" onclick="testSource()">🧪 Test Xtream</button>
+                                <button class="btn btn-secondary" onclick="testM3uSource()">🧪 Test M3U</button>
                                 <button class="btn btn-secondary" onclick="closeSourceEdit()">Cancel</button>
                             </div>
                         </div>
@@ -1927,6 +1943,34 @@
             document.body.insertAdjacentHTML('beforeend', html);
         }
         
+        function toggleSourceTypeFields() {
+            const isM3u = document.getElementById('edit-source-type')?.value === 'm3u';
+            for (const id of ['xtream-source-host', 'xtream-source-username', 'xtream-source-password']) {
+                const el = document.getElementById(id);
+                if (el) el.style.display = isM3u ? 'none' : 'block';
+            }
+            const m3u = document.getElementById('m3u-source-fields');
+            if (m3u) m3u.style.display = isM3u ? 'block' : 'none';
+        }
+
+        function testM3uSource() {
+            const playlist_url = document.getElementById('edit-source-playlist-url').value.trim();
+            showSourceTestStatus('info', 'Testing M3U playlist…');
+            fetch('/api/sources/test-m3u', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({playlist_url})
+            }).then(r => r.json().then(data => ({status:r.status,data})))
+              .then(({status,data}) => {
+                  if (status !== 200 || data.status !== 'ok') {
+                      showSourceTestStatus('error', data.message || 'M3U test failed');
+                      return;
+                  }
+                  const c = data.counts || {};
+                  showSourceTestStatus('success', '<strong>✓ ' + data.message + '</strong><br>Live: ' + (c.live_streams || 0) + ' · Movies: ' + (c.vod_streams || 0) + ' · Series: ' + (c.series || 0));
+              }).catch(() => showSourceTestStatus('error', 'Failed to test M3U URL.'));
+        }
+
         function closeSourceEdit() {
             const modal = document.getElementById('source-edit-modal');
             if (modal) modal.remove();
@@ -2162,13 +2206,16 @@
         }
         
         function saveSourceEdit(sourceId) {
+            const type = document.getElementById('edit-source-type').value;
             const route = document.getElementById('edit-source-route').value.trim();
-            if (!route) {
-                alert('Route is required!');
+            if (type !== 'm3u' && !route) {
+                alert('Route is required for Xtream sources!');
                 return;
             }
             
             const data = {
+                type,
+                playlist_url: document.getElementById('edit-source-playlist-url').value.trim(),
                 name: document.getElementById('edit-source-name').value,
                 host: document.getElementById('edit-source-host').value,
                 username: document.getElementById('edit-source-username').value,
