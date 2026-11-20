@@ -24,6 +24,7 @@ from app.database import (
 )
 from app.services.filter_service import register_xf_norm
 from app.services.provider_gate import maybe_background_fetch
+from app.services.m3u_import_service import parse_m3u
 
 if TYPE_CHECKING:
     from app.services.cart_service import CartService
@@ -2180,6 +2181,50 @@ class CacheService:
         self.save_refresh_progress(progress)
 
         logger.info(f"Refreshing source: {source_name}")
+
+        if source.get("type", "xtream") == "m3u":
+            playlist_url = str(source.get("playlist_url", "") or "").strip()
+            source_cache: dict[str, Any] = {}
+            existing_source = existing_sources_ref.get(source_id, {})
+            try:
+                if not playlist_url.startswith(("http://", "https://")):
+                    raise ValueError("M3U source is missing a valid HTTP(S) playlist URL")
+                if self.http_client is None:
+                    raise RuntimeError("HTTP client is not configured")
+                client = await self.http_client.get_client()
+                async with maybe_background_fetch(self.provider_gate):
+                    response = await client.get(playlist_url, timeout=60.0)
+                response.raise_for_status()
+                if len(response.content) > 50 * 1024 * 1024:
+                    raise ValueError("M3U playlist exceeds the 50 MB import limit")
+                source_cache = parse_m3u(response.text)
+                if not any(source_cache.get(key) for key in REFRESH_SOURCE_KEYS):
+                    raise ValueError("M3U playlist contains no valid entries")
+                for step_idx, (cache_key, label, _action) in enumerate(REFRESH_STEP_DEFINITIONS):
+                    step = source_result["steps"][step_idx]
+                    step.update({"status": "success", "count": len(source_cache.get(cache_key, [])), "error": None, "preserved_existing": False})
+                    progress["current_step"] = source_name + ": " + label
+                    progress["summary"] = self._build_refresh_summary(progress["source_results"], total_sources)
+                    self.save_refresh_progress(progress)
+                source_cache["last_refresh"] = datetime.now(timezone.utc).isoformat()
+                source_result["counts"] = self._build_source_counts(source_cache)
+                source_result["last_refresh"] = source_cache["last_refresh"]
+                source_result["status"] = "success"
+                return source_id, source_cache, True
+            except Exception as exc:
+                logger.exception("M3U refresh failed for %s", source_name)
+                error = {"type": "m3u_import_error", "message": str(exc)}
+                for step_idx, (cache_key, label, _action) in enumerate(REFRESH_STEP_DEFINITIONS):
+                    preserved = list(existing_source.get(cache_key, []))
+                    source_cache[cache_key] = preserved
+                    step = source_result["steps"][step_idx]
+                    step.update({"status": "failed", "count": len(preserved), "error": error, "preserved_existing": bool(preserved)})
+                source_result["errors"].append({"key": "m3u", "label": "M3U import", **error})
+                source_result["counts"] = self._build_source_counts(source_cache)
+                source_cache["last_refresh"] = existing_source.get("last_refresh")
+                source_result["last_refresh"] = source_cache.get("last_refresh")
+                source_result["status"] = self._derive_source_status(source_result)
+                return source_id, source_cache, False
 
         # Start with an empty cache — no deep copy of existing data.
         # On success we store fresh data; on failure we shallow-copy only
