@@ -164,6 +164,8 @@ class ConfigService:
                 # Ensure every source has required fields
                 default_filters = self._default_filters()
                 for source in config.get("sources", []):
+                    source.setdefault("type", "xtream")
+                    source.setdefault("playlist_url", "")
                     source.setdefault("filters", dict(default_filters))
                     source.setdefault("enabled", True)
                     source.setdefault("prefix", "")
