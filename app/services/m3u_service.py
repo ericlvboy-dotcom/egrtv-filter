@@ -63,7 +63,10 @@ class M3uService:
             prefix = source.get("prefix", "")
             filters = source.get("filters", {})
 
-            if not source.get("host") or not source.get("username") or not source.get("password"):
+            if source.get("type", "xtream") == "m3u":
+                if not source.get("playlist_url"):
+                    continue
+            elif not source.get("host") or not source.get("username") or not source.get("password"):
                 continue
 
             stats["sources"] += 1
@@ -114,9 +117,10 @@ class M3uService:
         enabled_sources = [
             source for source in sources
             if source.get("enabled", True)
-            and source.get("host")
-            and source.get("username")
-            and source.get("password")
+            and (
+                bool(source.get("playlist_url")) if source.get("type", "xtream") == "m3u"
+                else bool(source.get("host") and source.get("username") and source.get("password"))
+            )
         ]
         if not enabled_sources:
             return {"stats": "# Error: No sources configured", "sample_channels": []}
@@ -248,7 +252,7 @@ class M3uService:
 
             display_group = f"{prefix}{group}" if prefix else group
             url_id = encode_virtual_id(source_index, stream_id) if use_virtual_ids else stream_id
-            stream_url = f"{server_url}{stream_base}/user/pass/{url_id}.ts"
+            stream_url = stream.get("direct_source") or f"{server_url}{stream_base}/user/pass/{url_id}.ts"
             lines.append(f'#EXTINF:-1 tvg-id="{epg_id}" tvg-logo="{icon}" group-title="{display_group}",{name}')
             lines.append(stream_url)
             stats["live"] += 1
@@ -286,7 +290,7 @@ class M3uService:
 
             display_group = f"{prefix}{group}" if prefix else group
             url_id = encode_virtual_id(source_index, stream_id) if use_virtual_ids else stream_id
-            stream_url = f"{server_url}{stream_base}/movie/user/pass/{url_id}.{extension}"
+            stream_url = vod.get("direct_source") or f"{server_url}{stream_base}/movie/user/pass/{url_id}.{extension}"
             lines.append(f'#EXTINF:-1 tvg-logo="{icon}" group-title="{display_group}",{name}')
             lines.append(stream_url)
             stats["vod"] += 1
@@ -320,5 +324,5 @@ class M3uService:
 
             display_group = f"{prefix}{group}" if prefix else group
             lines.append(f'#EXTINF:-1 tvg-logo="{series_icon}" group-title="{display_group}",{series_name}')
-            lines.append("# Series - use Xtream API for episodes")
+            lines.append(series.get("direct_source") or "# Series - use Xtream API for episodes")
             stats["series"] += 1
