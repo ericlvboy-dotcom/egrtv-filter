@@ -74,7 +74,20 @@ async def player_api_merged(
 
     try:
         if not action:
-            source = enabled_sources[0]
+            xtream_sources = [s for s in enabled_sources if s.get("type", "xtream") != "m3u"]
+            if not xtream_sources:
+                return {
+                    "user_info": {
+                        "username": "proxy", "password": "proxy", "auth": 1,
+                        "status": "Active", "active_cons": "0", "max_connections": "999",
+                        "allowed_output_formats": ["m3u8", "ts", "mp4"],
+                    },
+                    "server_info": {
+                        "url": str(request.base_url).rstrip("/") + "/merged",
+                        "port": "80", "https_port": "443", "server_protocol": "http",
+                    },
+                }
+            source = xtream_sources[0]
             host = source["host"].rstrip("/")
             response = await client.get(
                 f"{host}/player_api.php",
