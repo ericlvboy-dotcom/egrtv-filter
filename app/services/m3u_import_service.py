@@ -18,7 +18,7 @@ _TRACKING_HEADERS = ("#EXTINF:",)
 
 
 def _stable_id(value: str) -> str:
-    return str(int(hashlib.sha1(value.encode("utf-8", "replace")).hexdigest()[:10], 16))
+    return str((int(hashlib.sha1(value.encode("utf-8", "replace")).hexdigest()[:8], 16) % 9_000_000) + 1)
 
 
 def _content_type(attrs: dict[str, str], group: str, url: str) -> str:
