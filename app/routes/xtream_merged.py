@@ -300,6 +300,18 @@ async def _handle_get_vod_info(request: Request, client, cfg: ConfigService):
     source = cfg.get_source_by_index(source_idx)
     if not source:
         return JSONResponse({"error": "Source not found"}, status_code=404)
+    if source.get("type", "xtream") == "m3u":
+        cache = request.app.state.cache_service
+        item = cache.get_stream_full_data("vod", source.get("id", ""), str(original_id))
+        if not item:
+            return JSONResponse({"info": {}}, status_code=404)
+        return {"info": {
+            "name": item.get("name", "M3U movie"),
+            "movie_image": item.get("stream_icon", ""),
+            "cover_big": item.get("stream_icon", ""),
+            "container_extension": item.get("container_extension", "mp4"),
+            "direct_source": item.get("direct_source", ""),
+        }}
     host = source["host"].rstrip("/")
     params = {"username": source["username"], "password": source["password"], "action": "get_vod_info", "vod_id": original_id}
     response = await client.get(f"{host}/player_api.php", params=params, timeout=60.0)
