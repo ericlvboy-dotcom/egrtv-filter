@@ -266,6 +266,20 @@ async def _handle_get_series_info(request: Request, client, cfg: ConfigService):
     source = cfg.get_source_by_index(source_idx)
     if not source:
         return JSONResponse({"error": "Source not found"}, status_code=404)
+    if source.get("type", "xtream") == "m3u":
+        cache = request.app.state.cache_service
+        series_items = cache.get_cached("series", source.get("id", ""))
+        item = next((entry for entry in series_items if str(entry.get("series_id", "")) == str(original_id)), None)
+        if not item:
+            return JSONResponse({"info": {}, "episodes": {}}, status_code=404)
+        episode = {
+            "id": encode_virtual_id(source_idx, original_id),
+            "episode_num": 1,
+            "title": item.get("name", "M3U item"),
+            "container_extension": "mp4",
+            "info": {"movie_image": item.get("cover", "")},
+        }
+        return {"info": {"name": item.get("name", "M3U item"), "cover": item.get("cover", "")}, "episodes": {"1": [episode]}}
     host = source["host"].rstrip("/")
     params = {"username": source["username"], "password": source["password"], "action": "get_series_info", "series_id": original_id}
     response = await client.get(f"{host}/player_api.php", params=params, timeout=60.0)
