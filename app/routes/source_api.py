@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from app.dependencies import get_cache_service, get_config_service
 from app.services.cache_service import CacheService
 from app.services.config_service import ConfigService
+from app.services.m3u_import_service import parse_m3u
 
 router = APIRouter(prefix="/api/sources", tags=["sources"])
 
@@ -32,6 +33,8 @@ async def add_source(request: Request, cfg: ConfigService = Depends(get_config_s
     new_source = {
         "id": str(uuid.uuid4())[:8],
         "name": data.get("name", "New Source"),
+        "type": data.get("type", "xtream"),
+        "playlist_url": data.get("playlist_url", ""),
         "host": data.get("host", ""),
         "username": data.get("username", ""),
         "password": data.get("password", ""),
@@ -43,6 +46,34 @@ async def add_source(request: Request, cfg: ConfigService = Depends(get_config_s
     config.setdefault("sources", []).append(new_source)
     cfg.save()
     return {"status": "ok", "source": new_source, "sources": config["sources"]}
+
+
+@router.post("/test-m3u")
+async def test_m3u_source(request: Request):
+    """Validate a remote M3U URL and return a small import preview."""
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    url = str(data.get("playlist_url", "") or "").strip()
+    if not (url.startswith("http://") or url.startswith("https://")):
+        return JSONResponse(status_code=400, content={"status": "error", "message": "Playlist URL must start with http:// or https://"})
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(25.0), follow_redirects=True) as client:
+            response = await client.get(url, headers={"Accept": "application/x-mpegURL, audio/x-mpegurl, */*"})
+        response.raise_for_status()
+        if len(response.content) > 50 * 1024 * 1024:
+            return JSONResponse(status_code=413, content={"status": "error", "message": "Playlist exceeds the 50 MB import limit"})
+        parsed = parse_m3u(response.text)
+        counts = {key: len(value) for key, value in parsed.items()}
+        total = sum(counts.values())
+        if not total:
+            return JSONResponse(status_code=422, content={"status": "error", "message": "No valid M3U entries were found"})
+        return {"status": "ok", "message": "M3U playlist is valid", "counts": counts}
+    except httpx.HTTPError as exc:
+        return JSONResponse(status_code=502, content={"status": "error", "message": f"Could not download playlist: {exc}"})
+    except Exception as exc:
+        return JSONResponse(status_code=422, content={"status": "error", "message": f"Could not parse playlist: {exc}"})
 
 
 @router.post("/test")
@@ -251,7 +282,7 @@ async def update_source(source_id: str, request: Request, cfg: ConfigService = D
     config = cfg.config
     for i, source in enumerate(config.get("sources", [])):
         if source.get("id") == source_id:
-            for key in ("name", "host", "username", "password", "enabled", "route", "filters"):
+            for key in ("name", "type", "playlist_url", "host", "username", "password", "enabled", "route", "filters"):
                 if key in data:
                     source[key] = data[key]
             if "prefix" in data:
