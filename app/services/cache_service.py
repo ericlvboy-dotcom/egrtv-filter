@@ -2539,7 +2539,11 @@ class CacheService:
             ]
 
         enabled_sources = [
-            s for s in sources if s.get("enabled", True) and s.get("host") and s.get("username") and s.get("password")
+            s for s in sources
+            if s.get("enabled", True) and (
+                bool(s.get("playlist_url")) if s.get("type", "xtream") == "m3u"
+                else bool(s.get("host") and s.get("username") and s.get("password"))
+            )
         ]
 
         if not enabled_sources:
