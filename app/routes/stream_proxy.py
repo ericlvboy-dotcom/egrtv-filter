@@ -7,6 +7,7 @@ from fastapi.responses import RedirectResponse, Response
 from app.dependencies import get_cache_service, get_config_service
 from app.services.cache_service import CacheService
 from app.services.config_service import ConfigService
+
 from app.services.stream_service import proxy_stream
 from app.services.xtream_service import decode_virtual_id
 
@@ -27,11 +28,17 @@ _RESERVED_ROUTES = frozenset(("full", "live", "movie", "series", "api", "static"
 async def proxy_live_stream_merged(
     request: Request, username: str, password: str, stream_id: str, ext: str = "ts",
     cfg: ConfigService = Depends(get_config_service),
+    cache: CacheService = Depends(get_cache_service),
 ):
     source_idx, original_id = decode_virtual_id(stream_id)
     source = cfg.get_source_by_index(source_idx)
     if not source:
         return Response(content="Source not found", status_code=404)
+    item = cache.get_stream_full_data("live", source.get("id", ""), str(original_id))
+    if item and item.get("direct_source"):
+        if cfg.get_proxy_enabled():
+            return await proxy_stream(item["direct_source"], request, stream_type="live")
+        return RedirectResponse(url=item["direct_source"], status_code=302)
     host = source["host"].rstrip("/")
     upstream_url = f"{host}/{source['username']}/{source['password']}/{original_id}.{ext}"
     if cfg.get_proxy_enabled():
@@ -44,11 +51,17 @@ async def proxy_live_stream_merged(
 async def proxy_movie_stream_merged(
     request: Request, username: str, password: str, stream_id: str, ext: str = "mp4",
     cfg: ConfigService = Depends(get_config_service),
+    cache: CacheService = Depends(get_cache_service),
 ):
     source_idx, original_id = decode_virtual_id(stream_id)
     source = cfg.get_source_by_index(source_idx)
     if not source:
         return Response(content="Source not found", status_code=404)
+    item = cache.get_stream_full_data("vod", source.get("id", ""), str(original_id))
+    if item and item.get("direct_source"):
+        if cfg.get_proxy_enabled():
+            return await proxy_stream(item["direct_source"], request, stream_type="vod")
+        return RedirectResponse(url=item["direct_source"], status_code=302)
     host = source["host"].rstrip("/")
     upstream_url = f"{host}/movie/{source['username']}/{source['password']}/{original_id}.{ext}"
     if cfg.get_proxy_enabled():
@@ -61,11 +74,17 @@ async def proxy_movie_stream_merged(
 async def proxy_series_stream_merged(
     request: Request, username: str, password: str, stream_id: str, ext: str = "mp4",
     cfg: ConfigService = Depends(get_config_service),
+    cache: CacheService = Depends(get_cache_service),
 ):
     source_idx, original_id = decode_virtual_id(stream_id)
     source = cfg.get_source_by_index(source_idx)
     if not source:
         return Response(content="Source not found", status_code=404)
+    item = cache.get_stream_full_data("series", source.get("id", ""), str(original_id))
+    if item and item.get("direct_source"):
+        if cfg.get_proxy_enabled():
+            return await proxy_stream(item["direct_source"], request, stream_type="series")
+        return RedirectResponse(url=item["direct_source"], status_code=302)
     host = source["host"].rstrip("/")
     upstream_url = f"{host}/series/{source['username']}/{source['password']}/{original_id}.{ext}"
     if cfg.get_proxy_enabled():
