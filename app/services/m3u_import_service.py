@@ -11,7 +11,7 @@ import re
 from urllib.parse import urlsplit
 
 _ATTR_RE = re.compile(r'([\w-]+)="([^"]*)"')
-_VOD_EXTENSIONS = (".mp4", ".mkv", ".avi", ".mov", ".m4v", ".wmv", ".ts", ".m2ts")
+_VOD_EXTENSIONS = (".mp4", ".mkv", ".avi", ".mov", ".m4v", ".wmv")
 _MOVIE_WORDS = ("movie", "movies", "vod", "film", "films")
 _SERIES_WORDS = ("series", "tv shows", "tv-shows", "episodes")
 _TRACKING_HEADERS = ("#EXTINF:",)
