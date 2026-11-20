@@ -4,15 +4,20 @@
 
 Each provider is configured as a separate source with:
 
-- Name
-- Host
-- Username and password
-- Dedicated route
+- Name and source type (Xtream Codes or M3U)
+- Xtream: host, username, password, and dedicated route
+- M3U: remote playlist URL
 - Optional group prefix
-- Maximum connections
+- Maximum connections (Xtream)
 - Per-source filters
 
 Dedicated routes are important because upstream providers can reuse IDs for streams, VOD items, or series.
+
+## M3U Source Import
+
+Choose **M3U Playlist URL** when adding a source, paste the remote HTTP(S) playlist URL, and use **Test M3U** to validate it and preview detected item counts. M3U sources are downloaded and parsed on every cache refresh. Stream URLs are passed through directly to the player; Xtream sources continue using their existing provider endpoints.
+
+The importer preserves channel names, group titles, logos, EPG IDs, and stream URLs. It identifies movies when the group explicitly indicates Movies/VOD/Films or when a recognisable movie file extension is present. Series are classified only when explicitly identified (for example with `tvg-type="series"` or a series/episodes group). Ambiguous entries remain Live TV. A plain M3U series entry has no standardised season/episode metadata, so it is exposed as a single playable item.
 
 ## Merged and Dedicated Access
 
